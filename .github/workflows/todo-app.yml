@@ -1,0 +1,147 @@
+name: React App Pipeline
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+permissions:
+  contents: read
+  security-events: write
+
+jobs:
+  build:
+    name: Build React App
+    runs-on: ubuntu-latest
+    outputs:
+      image-tag: ${{ steps.image.outputs.image }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - name: Build Docker Image
+        id: image
+        run: |
+          docker build -t vite-react-app:latest .
+          echo "image=vite-react-app:latest" >> $GITHUB_OUTPUT
+      - name: Upload Build Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-output
+          path: dist
+
+  owasp:
+    name: OWASP Dependency Check
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dependency-check/Dependency-Check_Action@v4
+        with:
+          project: "vite-react-app"
+          path: "."
+          format: "ALL"
+          out: "reports/owasp"
+          args: "--enableExperimental"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: owasp-report
+          path: reports/owasp
+
+  trivy-fs:
+    name: Trivy Filesystem Scan
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - uses: actions/checkout@v4
+      - uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: fs
+          scan-ref: .
+          format: json
+          output: reports/trivy-fs.json
+      - run: trivy fs . --format table -o reports/trivy-fs.txt || true
+      - uses: actions/upload-artifact@v4
+        with:
+          name: trivy-fs-report
+          path: reports
+
+  syft-sbom:
+    name: Syft SBOM Generation
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - uses: actions/checkout@v4
+      - uses: anchore/syft-action@v1
+        with:
+          image: .
+          format: spdx-json
+          output: reports/sbom.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sbom-source
+          path: reports/sbom.json
+
+  trivy-image:
+    name: Trivy Docker Image Scan
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - uses: actions/checkout@v4
+      - name: Load Docker Image
+        run: docker build -t vite-react-app:latest .
+      - uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: vite-react-app:latest
+          format: json
+          output: reports/trivy-image.json
+      - run: trivy image vite-react-app:latest --format table -o reports/trivy-image.txt || true
+      - uses: actions/upload-artifact@v4
+        with:
+          name: trivy-image-report
+          path: reports
+
+  grype:
+    name: Grype Image Scan
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - uses: actions/checkout@v4
+      - name: Load Docker Image
+        run: docker build -t vite-react-app:latest .
+      - uses: anchore/scan-action@v3
+        with:
+          image: vite-react-app:latest
+          fail-build: false
+          output-format: table
+      - run: |
+          curl -sSfL https://raw.githubusercontent.com/anchore/grype/main/install.sh | sh -s -- -b /usr/local/bin
+          grype vite-react-app:latest -o json > reports/grype.json || true
+          grype vite-react-app:latest -o table > reports/grype.txt || true
+      - uses: actions/upload-artifact@v4
+        with:
+          name: grype-report
+          path: reports
+
+  reports:
+    name: Consolidate Reports
+    runs-on: ubuntu-latest
+    needs: [owasp, trivy-fs, syft-sbom, trivy-image, grype]
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: all-reports
+      - run: |
+          sudo apt-get update -y
+          sudo apt-get install -y pandoc wkhtmltopdf || true
+          mkdir -p pdf-reports
+          find all-reports -type f -name "*.txt" -exec bash -c 'f="{}"; base=$(basename "$f" .txt); pandoc "$f" -o "pdf-reports/${base}.pdf"' \;
+      - uses: actions/upload-artifact@v4
+        with:
+          name: final-security-reports
+          path: pdf-reports
