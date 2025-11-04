@@ -5,6 +5,8 @@ on:
     workflows: ["Security Scans"]
     types:
       - completed
+    branches:
+      - main
 permissions:
   contents: read
   actions: read

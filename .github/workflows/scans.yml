@@ -5,6 +5,8 @@ on:
     workflows: ["Build React App"]
     types:
       - completed
+    branches:
+      - main
 permissions:
   contents: read
   actions: read
