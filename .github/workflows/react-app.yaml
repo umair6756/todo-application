@@ -155,25 +155,24 @@ jobs:
  
   # 4 PUSH TO AWS ECR
 
-  push-to-ecr:
-    runs-on: ubuntu-latest
-    needs: [generate-html]
-    steps:
-      - uses: actions/checkout@v4
+  # push-to-ecr:
+  #   runs-on: ubuntu-latest
+  #   needs: [generate-html]
+  #   steps:
+  #     - uses: actions/checkout@v4
 
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@1d5b9871a7d85a8b3fbaaa99ac9a324bc046bbd4
+  #     - name: Configure AWS credentials
+  #       uses: aws-actions/configure-aws-credentials@v4
+  #       with:
+  #         aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+  #         aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+  #         aws-region: ${{ env.AWS_REGION }}
 
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ env.AWS_REGION }}
+  #     - name: Login to Amazon ECR
+  #       uses: aws-actions/amazon-ecr-login@v2
 
-      - name: Login to Amazon ECR
-        uses: aws-actions/amazon-ecr-login@b6b297b4f85996b7ff8a5e9dbf4a3e204b8b37ad
-
-      - name: Build and Push Docker Image
-        run: |
-          docker build -t $ECR_REPOSITORY:$IMAGE_TAG .
-          docker tag $ECR_REPOSITORY:$IMAGE_TAG ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/$ECR_REPOSITORY:$IMAGE_TAG
-          docker push ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/$ECR_REPOSITORY:$IMAGE_TAG
+  #     - name: Build and Push Docker Image
+  #       run: |
+  #         docker build -t $ECR_REPOSITORY:$IMAGE_TAG .
+  #         docker tag $ECR_REPOSITORY:$IMAGE_TAG ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/$ECR_REPOSITORY:$IMAGE_TAG
+  #         docker push ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/$ECR_REPOSITORY:$IMAGE_TAG
