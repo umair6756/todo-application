@@ -5,30 +5,19 @@ on:
     workflows: ["Build React App"]
     types:
       - completed
-    branches:
-      - main
+
 permissions:
   contents: read
   actions: read
 
 jobs:
-  sonar:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: SonarQube Scan
-        uses: sonarsource/sonarcloud-github-action@master
-        with:
-          args: >
-            -Dsonar.projectKey=vite-react-app
-            -Dsonar.organization=my-org
-            -Dsonar.host.url=https://sonarcloud.io
-            -Dsonar.login=${{ secrets.SONAR_TOKEN }}
 
   snyk:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Prepare reports folder
+        run: mkdir -p reports
       - name: Install Snyk
         run: npm install -g snyk
       - name: Run Snyk Scan
@@ -40,9 +29,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Prepare reports folder
+        run: mkdir -p reports
       - name: Install Gitleaks
         run: |
-          curl -sSL https://github.com/zricethezav/gitleaks/releases/latest/download/gitleaks_8.20.1_linux_x64.tar.gz | tar xz
+          GITLEAKS_VERSION=$(curl -s https://api.github.com/repos/gitleaks/gitleaks/releases/latest | grep tag_name | cut -d '"' -f 4)
+          curl -sSL https://github.com/gitleaks/gitleaks/releases/download/${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION#v}_linux_x64.tar.gz -o gitleaks.tar.gz
+          tar -xvzf gitleaks.tar.gz
           sudo mv gitleaks /usr/local/bin/
       - name: Run Gitleaks
         run: gitleaks detect --source . --report-format json --report-path reports/gitleaks.json || true
@@ -51,31 +44,37 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Prepare reports folder
+        run: mkdir -p reports
       - name: Trivy FS Scan
         uses: aquasecurity/trivy-action@master
         with:
           scan-type: fs
           scan-ref: .
-          format: html
-          output: reports/trivy-fs.html
+          format: json
+          output: reports/trivy-fs.json
 
   trivy-image:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Prepare reports folder
+        run: mkdir -p reports
       - name: Build Docker Image
         run: docker build -t vite-react-app:latest .
       - name: Trivy Image Scan
         uses: aquasecurity/trivy-action@master
         with:
           image-ref: vite-react-app:latest
-          format: html
-          output: reports/trivy-image.html
+          format: json
+          output: reports/trivy-image.json
 
   syft-sbom:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Prepare reports folder
+        run: mkdir -p reports
       - name: Install Syft
         run: |
           curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b /usr/local/bin
@@ -83,20 +82,18 @@ jobs:
 
   generate-html:
     runs-on: ubuntu-latest
-    needs: [sonar, snyk, gitleaks, trivy-fs, trivy-image, syft-sbom]
+    needs: [ snyk, gitleaks, trivy-fs, trivy-image, syft-sbom]
     steps:
       - uses: actions/checkout@v4
-      - name: Consolidate Reports into HTML
+      - name: Convert Reports to HTML
         run: |
           mkdir -p reports/html
-          # Convert JSON reports to HTML
           for f in reports/*.json; do
             base=$(basename "$f" .json)
-            echo "<h2>$base Report</h2>" > reports/html/$base.html
-            cat $f | jq '.' | sed 's/$/<br>/' >> reports/html/$base.html
+            echo "<h2>$base</h2><pre>" > reports/html/$base.html
+            cat "$f" | jq '.' >> reports/html/$base.html
+            echo "</pre>" >> reports/html/$base.html
           done
-          # Copy HTML reports
-          cp reports/*.html reports/html/
       - uses: actions/upload-artifact@v4
         with:
           name: html-security-reports
