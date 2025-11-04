@@ -5,6 +5,9 @@ on:
     workflows: ["Security Scans"]
     types:
       - completed
+permissions:
+  contents: read
+  actions: read
 
 jobs:
   push-to-ecr:
